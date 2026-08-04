@@ -12,6 +12,7 @@
     "@vitejs/plugin-react": "latest",
     "lucide-react": "latest",
     "recharts": "latest",
+    "tesseract.js": "^7.0.0",
     "vite": "latest",
     "react": "latest",
     "react-dom": "latest"

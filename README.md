@@ -6,14 +6,16 @@ A mobile-friendly React expense tracker generated from the original Claude JSX c
 
 - Add and delete expenses
 - Filter by category
+- GF spending category
 - 7-day and 30-day category donut chart
-- Receipt camera/file picker
+- Daily spending bar chart with custom date-range total
+- Free on-device receipt OCR with amount confirmation
 - Browser-only persistence with `localStorage`
 - Automatic GitHub Pages deployment
 
 ## Privacy and current limitation
 
-Expense entries are stored only in the browser on the current device. They do not sync between devices. Receipt photos are not uploaded or saved, and the amount must currently be entered manually. Secure AI receipt recognition requires a server-side API endpoint and is intentionally not included in this static deployment.
+Expense entries are stored only in the browser on the current device and do not sync between devices. Receipt photos are processed locally and are not uploaded or saved. Free OCR can make mistakes, so always check the detected amount and choose a category before saving.
 
 ## Run locally
 
