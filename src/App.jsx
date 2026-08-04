@@ -15,6 +15,7 @@ import {
   Loader2,
   Sparkles,
   Heart,
+  Tag,
 } from "lucide-react";
 import {
   BarChart,
@@ -41,7 +42,7 @@ const inkFaint = "#5D6E85";
 const accentCyan = "#43C6B8";
 const stampCoral = "#FF7A66";
 
-const CATEGORIES = [
+const BUILTIN_CATEGORIES = [
   { id: "food", label: "Food", icon: Utensils, color: "#E8AC4E" },
   { id: "transport", label: "Transport", icon: Car, color: "#5FA8E0" },
   { id: "sports", label: "Sports", icon: Dumbbell, color: "#7FCB79" },
@@ -51,9 +52,6 @@ const CATEGORIES = [
   { id: "gf", label: "GF", icon: Heart, color: "#F08FB3" },
   { id: "other", label: "Other", icon: MoreHorizontal, color: "#7E8CA3" },
 ];
-
-const catById = (id) =>
-  CATEGORIES.find((c) => c.id === id) || CATEGORIES.find((c) => c.id === "other");
 
 function formatRM(n) {
   return `RM ${n.toFixed(2)}`;
@@ -130,9 +128,14 @@ export default function ExpenseTracker() {
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("all");
   const [formOpen, setFormOpen] = useState(false);
+  const [customCategoryOpen, setCustomCategoryOpen] = useState(false);
   const [chartRange, setChartRange] = useState("7"); // "7" or "30"
   const [rangeStart, setRangeStart] = useState(() => daysAgoISO(6));
   const [rangeEnd, setRangeEnd] = useState(todayISO);
+  const [customCategories, setCustomCategories] = useState([]);
+  const [customCategoryName, setCustomCategoryName] = useState("");
+  const [customCategoryColor, setCustomCategoryColor] = useState("#A78BFA");
+  const [customCategoryError, setCustomCategoryError] = useState("");
 
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("food");
@@ -143,11 +146,25 @@ export default function ExpenseTracker() {
   const [scanNotice, setScanNotice] = useState(null);
   const fileInputRef = useRef(null);
 
+  const allCategories = useMemo(
+    () => [
+      ...BUILTIN_CATEGORIES,
+      ...customCategories.map((item) => ({ ...item, icon: Tag })),
+    ],
+    [customCategories]
+  );
+
+  const getCategory = (id) =>
+    allCategories.find((c) => c.id === id) ||
+    BUILTIN_CATEGORIES.find((c) => c.id === "other");
+
   // ---- Load from browser storage -----------------------------------
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("expense-tracker-expenses");
       if (saved) setExpenses(JSON.parse(saved));
+      const savedCategories = window.localStorage.getItem("expense-tracker-custom-categories");
+      if (savedCategories) setCustomCategories(JSON.parse(savedCategories));
     } catch (e) {
       setError("Couldn't load saved entries in this browser.");
     } finally {
@@ -163,6 +180,33 @@ export default function ExpenseTracker() {
     } catch (e) {
       setError("Couldn't save — please try again.");
     }
+  }
+
+  function handleAddCustomCategory(e) {
+    e.preventDefault();
+    const label = customCategoryName.trim();
+    if (!label) {
+      setCustomCategoryError("Please enter a category name.");
+      return;
+    }
+    if (allCategories.some((item) => item.label.toLowerCase() === label.toLowerCase())) {
+      setCustomCategoryError("This category already exists.");
+      return;
+    }
+
+    const newCategory = {
+      id: `custom-${Date.now()}`,
+      label: label.slice(0, 24),
+      color: customCategoryColor,
+    };
+    const next = [...customCategories, newCategory];
+    setCustomCategories(next);
+    window.localStorage.setItem("expense-tracker-custom-categories", JSON.stringify(next));
+    setCategory(newCategory.id);
+    setCustomCategoryName("");
+    setCustomCategoryColor("#A78BFA");
+    setCustomCategoryError("");
+    setCustomCategoryOpen(false);
   }
 
   function resetForm() {
@@ -275,11 +319,11 @@ export default function ExpenseTracker() {
         totals[x.category] = (totals[x.category] || 0) + x.amount;
       });
     const list = Object.entries(totals)
-      .map(([id, value]) => ({ id, value, ...catById(id) }))
+      .map(([id, value]) => ({ id, value, ...getCategory(id) }))
       .sort((a, b) => b.value - a.value);
     const sum = list.reduce((s, x) => s + x.value, 0);
     return { list, sum };
-  }, [expenses, chartRange]);
+  }, [expenses, chartRange, allCategories]);
 
   const rangeData = useMemo(() => {
     const start = rangeStart <= rangeEnd ? rangeStart : rangeEnd;
@@ -566,7 +610,7 @@ export default function ExpenseTracker() {
             >
               All
             </button>
-            {CATEGORIES.map((c) => {
+            {allCategories.map((c) => {
               const Icon = c.icon;
               const active = filter === c.id;
               return (
@@ -585,6 +629,15 @@ export default function ExpenseTracker() {
                 </button>
               );
             })}
+            <button
+              onClick={() => setCustomCategoryOpen(true)}
+              aria-label="Add custom category"
+              title="Add custom category"
+              style={{ background: cardBg, color: accentCyan, border: `1px dashed ${accentCyan}` }}
+              className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+            >
+              <Plus size={16} />
+            </button>
           </div>
         </section>
 
@@ -624,7 +677,7 @@ export default function ExpenseTracker() {
                   </div>
                   <div style={{ background: cardBg, border: `1px solid ${lineColor}` }} className="rounded-2xl overflow-hidden">
                     {items.map((x, i) => {
-                      const c = catById(x.category);
+                      const c = getCategory(x.category);
                       const Icon = c.icon;
                       return (
                         <div
@@ -786,7 +839,7 @@ export default function ExpenseTracker() {
                   Category
                 </label>
                 <div className="grid grid-cols-4 gap-2 mb-4">
-                  {CATEGORIES.map((c) => {
+                  {allCategories.map((c) => {
                     const Icon = c.icon;
                     const active = category === c.id;
                     return (
@@ -840,6 +893,107 @@ export default function ExpenseTracker() {
                 </button>
               </form>
             </div>
+          </div>
+        )}
+
+        {/* Add custom category dialog */}
+        {customCategoryOpen && (
+          <div className="fixed inset-0 z-30 flex items-center justify-center px-5">
+            <button
+              type="button"
+              aria-label="Close custom category dialog"
+              onClick={() => {
+                setCustomCategoryOpen(false);
+                setCustomCategoryError("");
+              }}
+              className="absolute inset-0"
+              style={{ background: "rgba(4,9,16,0.72)" }}
+            />
+            <form
+              onSubmit={handleAddCustomCategory}
+              style={{ background: bg, border: `1px solid ${lineColor}`, width: "100%", maxWidth: 390 }}
+              className="relative rounded-2xl p-5 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <p style={{ color: ink }} className="font-bold">
+                    New Category
+                  </p>
+                  <p style={{ color: inkDim }} className="text-xs mt-0.5">
+                    Create your own spending category
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomCategoryOpen(false);
+                    setCustomCategoryError("");
+                  }}
+                  style={{ color: inkDim }}
+                  className="w-8 h-8 rounded-full flex items-center justify-center"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <label
+                style={{ color: inkDim, letterSpacing: "0.08em" }}
+                className="text-[11px] uppercase font-semibold block mb-1.5"
+              >
+                Category name
+              </label>
+              <input
+                autoFocus
+                maxLength={24}
+                placeholder="e.g. Entertainment"
+                value={customCategoryName}
+                onChange={(e) => {
+                  setCustomCategoryName(e.target.value);
+                  setCustomCategoryError("");
+                }}
+                style={{ background: cardBg, border: `1px solid ${lineColor}`, color: ink }}
+                className="w-full rounded-xl px-4 py-3 text-sm mb-4 outline-none focus:ring-2"
+              />
+
+              <label
+                style={{ color: inkDim, letterSpacing: "0.08em" }}
+                className="text-[11px] uppercase font-semibold block mb-1.5"
+              >
+                Category color
+              </label>
+              <div
+                style={{ background: cardBg, border: `1px solid ${lineColor}` }}
+                className="flex items-center gap-3 rounded-xl px-3 py-2 mb-2"
+              >
+                <input
+                  type="color"
+                  value={customCategoryColor}
+                  onChange={(e) => setCustomCategoryColor(e.target.value)}
+                  className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0 p-0"
+                />
+                <div
+                  style={{ background: `${customCategoryColor}22`, color: customCategoryColor }}
+                  className="flex-1 rounded-lg px-3 py-2 flex items-center gap-2 text-sm font-semibold"
+                >
+                  <Tag size={15} />
+                  {customCategoryName.trim() || "Preview"}
+                </div>
+              </div>
+
+              {customCategoryError && (
+                <p style={{ color: stampCoral }} className="text-xs mb-3">
+                  {customCategoryError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                style={{ background: accentCyan }}
+                className="w-full rounded-xl py-3 mt-3 text-[#08201C] font-semibold active:scale-[0.99]"
+              >
+                Create Category
+              </button>
+            </form>
           </div>
         )}
       </div>
