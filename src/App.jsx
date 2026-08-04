@@ -14,8 +14,20 @@ import {
   Camera,
   Loader2,
   Sparkles,
+  Heart,
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+} from "recharts";
+import { createWorker } from "tesseract.js";
 
 // ---- Design tokens: deep-sea ledger, dark blue theme ---------------
 const bg = "#0D1826";
@@ -36,17 +48,64 @@ const CATEGORIES = [
   { id: "travel", label: "Travel", icon: Plane, color: "#E0956B" },
   { id: "shopping", label: "Shopping", icon: ShoppingBag, color: "#C08FDA" },
   { id: "bills", label: "Bills", icon: Receipt, color: "#9AA7C4" },
+  { id: "gf", label: "GF", icon: Heart, color: "#F08FB3" },
   { id: "other", label: "Other", icon: MoreHorizontal, color: "#7E8CA3" },
 ];
 
-const catById = (id) => CATEGORIES.find((c) => c.id === id) || CATEGORIES[6];
+const catById = (id) =>
+  CATEGORIES.find((c) => c.id === id) || CATEGORIES.find((c) => c.id === "other");
 
 function formatRM(n) {
   return `RM ${n.toFixed(2)}`;
 }
 
+function localDateISO(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateISO();
+}
+
+function daysAgoISO(days) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return localDateISO(d);
+}
+
+function extractReceiptAmount(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const candidates = [];
+  const amountPattern = /(?:RM\s*)?(\d{1,6}(?:[.,]\d{2}))/gi;
+
+  lines.forEach((line, index) => {
+    const lower = line.toLowerCase();
+    let score = 0;
+    if (/grand\s*total|total\s*(due|payable)|amount\s*(due|payable)/i.test(line)) score += 12;
+    else if (/nett?\s*total|total\s*amount/i.test(line)) score += 10;
+    else if (/total/i.test(line)) score += 7;
+    if (/subtotal|sub-total/i.test(line)) score -= 8;
+    if (/change|cash|tax|sst|rounding|discount/i.test(lower)) score -= 4;
+
+    for (const match of line.matchAll(amountPattern)) {
+      const value = Number(match[1].replace(",", "."));
+      if (Number.isFinite(value) && value > 0) {
+        candidates.push({ value, score, index });
+      }
+    }
+  });
+
+  if (!candidates.length) return null;
+  const prioritized = candidates.filter((item) => item.score > 0);
+  const pool = prioritized.length ? prioritized : candidates;
+  pool.sort((a, b) => b.score - a.score || b.index - a.index || b.value - a.value);
+  return pool[0].value;
 }
 
 function dateLabel(iso) {
@@ -54,8 +113,8 @@ function dateLabel(iso) {
   const today = new Date();
   const y = new Date();
   y.setDate(today.getDate() - 1);
-  const todayISOStr = today.toISOString().slice(0, 10);
-  const yISOStr = y.toISOString().slice(0, 10);
+  const todayISOStr = localDateISO(today);
+  const yISOStr = localDateISO(y);
   if (iso === todayISOStr) return "Today";
   if (iso === yISOStr) return "Yesterday";
   return d.toLocaleDateString("en-MY", {
@@ -72,6 +131,8 @@ export default function ExpenseTracker() {
   const [filter, setFilter] = useState("all");
   const [formOpen, setFormOpen] = useState(false);
   const [chartRange, setChartRange] = useState("7"); // "7" or "30"
+  const [rangeStart, setRangeStart] = useState(() => daysAgoISO(6));
+  const [rangeEnd, setRangeEnd] = useState(todayISO);
 
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("food");
@@ -133,19 +194,42 @@ export default function ExpenseTracker() {
     persist(expenses.filter((x) => x.id !== id));
   }
 
-  // ---- Receipt photo capture -----------------------------------------
+  // ---- Receipt photo capture + free on-device OCR -------------------
   async function handlePhoto(e) {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
     setScanning(true);
-    setScanNotice(null);
-    setScanNotice({
-      type: "warn",
-      text: `Receipt selected (${file.name}). Please enter the amount manually.`,
-    });
-    setScanning(false);
     setFormOpen(true);
+    setScanNotice({
+      type: "success",
+      text: "Reading receipt on this device… The first scan may take 20–40 seconds.",
+    });
+    try {
+      const worker = await createWorker("eng");
+      const result = await worker.recognize(file);
+      await worker.terminate();
+      const detected = extractReceiptAmount(result.data.text || "");
+      if (detected) {
+        setAmount(detected.toFixed(2));
+        setScanNotice({
+          type: "success",
+          text: `Detected ${formatRM(detected)}. Check the amount and choose a category before saving.`,
+        });
+      } else {
+        setScanNotice({
+          type: "warn",
+          text: "No clear total was found. Please enter the amount manually and choose a category.",
+        });
+      }
+    } catch (err) {
+      setScanNotice({
+        type: "warn",
+        text: "The receipt could not be read. Please enter the amount manually.",
+      });
+    } finally {
+      setScanning(false);
+    }
   }
 
   // ---- Derived data ----------------------------------------------------
@@ -196,6 +280,38 @@ export default function ExpenseTracker() {
     const sum = list.reduce((s, x) => s + x.value, 0);
     return { list, sum };
   }, [expenses, chartRange]);
+
+  const rangeData = useMemo(() => {
+    const start = rangeStart <= rangeEnd ? rangeStart : rangeEnd;
+    const end = rangeStart <= rangeEnd ? rangeEnd : rangeStart;
+    const selected = expenses.filter((x) => x.date >= start && x.date <= end);
+    const totals = {};
+    selected.forEach((x) => {
+      totals[x.date] = (totals[x.date] || 0) + x.amount;
+    });
+
+    const daily = [];
+    const cursor = new Date(`${start}T00:00:00Z`);
+    const last = new Date(`${end}T00:00:00Z`);
+    while (cursor <= last && daily.length < 366) {
+      const iso = cursor.toISOString().slice(0, 10);
+      daily.push({
+        date: iso,
+        label: cursor.toLocaleDateString("en-MY", {
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        }),
+        amount: totals[iso] || 0,
+      });
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    return {
+      daily,
+      total: selected.reduce((sum, item) => sum + item.amount, 0),
+    };
+  }, [expenses, rangeStart, rangeEnd]);
 
   return (
     <div
@@ -253,6 +369,87 @@ export default function ExpenseTracker() {
             </div>
           </div>
         </header>
+
+        {/* Daily spending dashboard */}
+        <section className="px-5 mb-5">
+          <div
+            style={{ background: cardBg, border: `1px solid ${lineColor}` }}
+            className="rounded-2xl px-4 py-4"
+          >
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <p
+                  style={{ color: inkDim, letterSpacing: "0.1em" }}
+                  className="text-[10px] uppercase font-semibold"
+                >
+                  Daily spending dashboard
+                </p>
+                <p
+                  style={{ color: ink, fontFamily: "ui-monospace, Menlo, Consolas, monospace" }}
+                  className="text-xl font-bold mt-1"
+                >
+                  {formatRM(rangeData.total)}
+                </p>
+                <p style={{ color: inkFaint }} className="text-[10px]">
+                  selected period
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <label style={{ color: inkDim }} className="text-[10px] uppercase font-semibold">
+                From
+                <input
+                  type="date"
+                  value={rangeStart}
+                  max={todayISO()}
+                  onChange={(e) => setRangeStart(e.target.value)}
+                  style={{ background: bg, border: `1px solid ${lineColor}`, color: ink }}
+                  className="block w-full rounded-lg px-2 py-2 mt-1 text-xs outline-none"
+                />
+              </label>
+              <label style={{ color: inkDim }} className="text-[10px] uppercase font-semibold">
+                To
+                <input
+                  type="date"
+                  value={rangeEnd}
+                  max={todayISO()}
+                  onChange={(e) => setRangeEnd(e.target.value)}
+                  style={{ background: bg, border: `1px solid ${lineColor}`, color: ink }}
+                  className="block w-full rounded-lg px-2 py-2 mt-1 text-xs outline-none"
+                />
+              </label>
+            </div>
+
+            <div className="overflow-x-auto pb-1">
+              <div style={{ width: Math.max(350, rangeData.daily.length * 38), height: 170 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={rangeData.daily} margin={{ top: 8, right: 4, left: -20, bottom: 0 }}>
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: inkFaint, fontSize: 9 }}
+                      axisLine={{ stroke: lineColor }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: inkFaint, fontSize: 9 }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={42}
+                    />
+                    <Tooltip
+                      formatter={(value) => [formatRM(Number(value)), "Spent"]}
+                      labelFormatter={(_, payload) => payload?.[0]?.payload?.date || ""}
+                      contentStyle={{ background: bg, border: `1px solid ${lineColor}`, borderRadius: 10 }}
+                      labelStyle={{ color: inkDim }}
+                    />
+                    <Bar dataKey="amount" fill={accentCyan} radius={[5, 5, 0, 0]} minPointSize={2} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        </section>
 
         {/* Category donut — by spending amount */}
         <section className="px-5 mb-2">
