@@ -530,16 +530,16 @@ export default function ExpenseTracker() {
                 No expenses in this range yet.
               </p>
             ) : (
-              <div className="flex items-center gap-4">
-                <div style={{ width: 108, height: 108 }} className="relative shrink-0">
+              <div className="flex flex-col items-center gap-4">
+                <div style={{ width: 132, height: 132 }} className="relative shrink-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={chartData.list}
                         dataKey="value"
                         nameKey="id"
-                        innerRadius={34}
-                        outerRadius={52}
+                        innerRadius={42}
+                        outerRadius={64}
                         paddingAngle={2}
                         stroke="none"
                       >
@@ -552,7 +552,7 @@ export default function ExpenseTracker() {
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span
                       style={{ color: ink, fontFamily: "ui-monospace, Menlo, Consolas, monospace" }}
-                      className="text-[13px] font-bold"
+                      className="text-sm font-bold"
                     >
                       RM{Math.round(chartData.sum)}
                     </span>
@@ -562,22 +562,23 @@ export default function ExpenseTracker() {
                   </div>
                 </div>
 
-                <div className="flex-1 min-w-0 flex flex-col gap-2">
+                <div className="w-full min-w-0 flex flex-col gap-3">
                   {chartData.list.map((c) => {
                     const pct = chartData.sum ? Math.round((c.value / chartData.sum) * 100) : 0;
                     return (
                       <div key={c.id}>
-                        <div className="flex items-center gap-2 text-xs mb-1">
+                        <div className="grid grid-cols-[8px_minmax(0,1fr)_auto_34px] items-center gap-2 text-xs mb-1.5">
                           <span style={{ background: c.color }} className="w-2 h-2 rounded-full shrink-0" />
-                          <span style={{ color: ink }} className="flex-1 truncate">
+                          <span style={{ color: ink }} className="min-w-0 break-words font-medium leading-tight">
                             {c.label}
                           </span>
                           <span
                             style={{ color: inkDim, fontFamily: "ui-monospace, Menlo, Consolas, monospace" }}
+                            className="whitespace-nowrap text-right"
                           >
                             {formatRM(c.value)}
                           </span>
-                          <span style={{ color: inkFaint, width: 30 }} className="text-right">
+                          <span style={{ color: inkFaint }} className="text-right whitespace-nowrap">
                             {pct}%
                           </span>
                         </div>
