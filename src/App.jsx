@@ -440,7 +440,7 @@ export default function ExpenseTracker() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="flex flex-col gap-3 mb-4">
               <label style={{ color: inkDim }} className="text-[10px] uppercase font-semibold">
                 From
                 <input
@@ -449,7 +449,7 @@ export default function ExpenseTracker() {
                   max={todayISO()}
                   onChange={(e) => setRangeStart(e.target.value)}
                   style={{ background: bg, border: `1px solid ${lineColor}`, color: ink }}
-                  className="block w-full rounded-lg px-2 py-2 mt-1 text-xs outline-none"
+                  className="block w-full rounded-lg px-3 py-2.5 mt-1 text-xs outline-none"
                 />
               </label>
               <label style={{ color: inkDim }} className="text-[10px] uppercase font-semibold">
@@ -460,7 +460,7 @@ export default function ExpenseTracker() {
                   max={todayISO()}
                   onChange={(e) => setRangeEnd(e.target.value)}
                   style={{ background: bg, border: `1px solid ${lineColor}`, color: ink }}
-                  className="block w-full rounded-lg px-2 py-2 mt-1 text-xs outline-none"
+                  className="block w-full rounded-lg px-3 py-2.5 mt-1 text-xs outline-none"
                 />
               </label>
             </div>
@@ -482,12 +482,19 @@ export default function ExpenseTracker() {
                       width={42}
                     />
                     <Tooltip
+                      cursor={false}
                       formatter={(value) => [formatRM(Number(value)), "Spent"]}
                       labelFormatter={(_, payload) => payload?.[0]?.payload?.date || ""}
                       contentStyle={{ background: bg, border: `1px solid ${lineColor}`, borderRadius: 10 }}
                       labelStyle={{ color: inkDim }}
                     />
-                    <Bar dataKey="amount" fill={accentCyan} radius={[5, 5, 0, 0]} minPointSize={2} />
+                    <Bar
+                      dataKey="amount"
+                      fill={accentCyan}
+                      activeBar={{ fill: "#1F736D" }}
+                      radius={[5, 5, 0, 0]}
+                      minPointSize={2}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
